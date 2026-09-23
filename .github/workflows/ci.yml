@@ -43,6 +43,7 @@ jobs:
           tap_dir="$(brew --repository)/Library/Taps/michael-palmes/homebrew-tap"
           mkdir -p "$(dirname "$tap_dir")"
           ln -sfn "$GITHUB_WORKSPACE" "$tap_dir"
+          brew trust michael-palmes/tap
       - run: brew readall --aliases michael-palmes/tap
       - run: brew style michael-palmes/tap
       - run: brew audit --strict --online --tap michael-palmes/tap
@@ -61,6 +62,7 @@ jobs:
           tap_dir="$(brew --repository)/Library/Taps/michael-palmes/homebrew-tap"
           mkdir -p "$(dirname "$tap_dir")"
           ln -sfn "$GITHUB_WORKSPACE" "$tap_dir"
+          brew trust michael-palmes/tap
           sudo xcode-select --switch /Applications/Xcode_26.6.app
       - run: brew install --verbose michael-palmes/tap/offsider
       - name: Installed bytes equal the attested release tarball
