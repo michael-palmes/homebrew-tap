@@ -1,8 +1,8 @@
 class Offsider < Formula
   desc "Drive iOS Simulators from the terminal and AI agents"
   homepage "https://github.com/michael-palmes/offsider"
-  url "https://github.com/michael-palmes/offsider/releases/download/v0.2.0/offsider-0.2.0-arm64.tar.gz"
-  sha256 "d14eb425cc5cecdc23f25bafcbbf7ab2429c2eb197cfc44653afb104290616df"
+  url "https://github.com/michael-palmes/offsider/releases/download/v0.3.0/offsider-0.3.0-arm64.tar.gz"
+  sha256 "6b1fb57818cbf62ee89a440cb0930e17e92ba5f14cdbaca67212c746abe64892"
   license "MIT"
 
   livecheck do
@@ -11,7 +11,7 @@ class Offsider < Formula
   end
 
   depends_on arch: :arm64
-  depends_on macos: :sequoia
+  depends_on macos: :tahoe
   depends_on xcode: "26.0"
 
   # Pre-built, Developer ID signed and notarised payload. Keep @rpath install names so
