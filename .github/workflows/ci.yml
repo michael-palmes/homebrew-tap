@@ -79,14 +79,24 @@ jobs:
             if [ -L "$p" ]; then echo "L $p -> $(readlink "$p")"; else echo "F $p $(shasum -a 256 "$p" | cut -d' ' -f1)"; fi; done); }
           diff <(manifest "$x") <(manifest "$libexec")
       - name: Developer ID signatures intact
+        env:
+          # The signing team, held as a repository secret so it never appears in this file or the logs.
+          # Dependabot runs see no secrets, so they check the signature chain without the team.
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           libexec="$(brew --prefix offsider)/libexec"
+          [ -n "${APPLE_TEAM_ID:-}" ] || echo "::notice::APPLE_TEAM_ID is not available to this run; checking the Developer ID chain without the team"
           for p in "$libexec/offsider" "$libexec"/Frameworks/*.framework; do
             codesign --verify --strict --verbose=2 "$p"
             info="$(codesign -dv --verbose=4 "$p" 2>&1)"
-            grep -Fxq "Authority=Developer ID Application: Michael Palmes (ABCDE12345)" <<<"$info"
-            grep -Fxq "TeamIdentifier=ABCDE12345" <<<"$info"
+            grep -Eq "^Authority=Developer ID Application: .* \([A-Z0-9]{10}\)$" <<<"$info"
+            grep -Fxq "Authority=Developer ID Certification Authority" <<<"$info"
+            grep -Fxq "Authority=Apple Root CA" <<<"$info"
+            if [ -n "${APPLE_TEAM_ID:-}" ]; then
+              grep -Fxq "Authority=Developer ID Application: Michael Palmes (${APPLE_TEAM_ID})" <<<"$info"
+              grep -Fxq "TeamIdentifier=${APPLE_TEAM_ID}" <<<"$info"
+            fi
             grep -Fq "flags=0x10000(runtime)" <<<"$info"
           done
       - run: brew test --verbose michael-palmes/tap/offsider
