@@ -1,8 +1,8 @@
 class Offsider < Formula
   desc "Drive iOS Simulators from the terminal and AI agents"
   homepage "https://github.com/michael-palmes/offsider"
-  url "https://github.com/michael-palmes/offsider/releases/download/v0.10.0/offsider-0.10.0-arm64.tar.gz"
-  sha256 "5ad6cd4c4e868af9173930216fac081a47af8c02acbfdbb8e54dd7cc813bfeb3"
+  url "https://github.com/michael-palmes/offsider/releases/download/v0.11.0/offsider-0.11.0-arm64.tar.gz"
+  sha256 "6b40d894ce8641092bfd2b48608b9265b1f87aa1f6b768c3312d74f764c57bb1"
   license "MIT"
 
   livecheck do
