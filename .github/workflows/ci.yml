@@ -29,15 +29,67 @@ jobs:
   audit:
     runs-on: macos-26
     timeout-minutes: 20
-    outputs:
-      has-formula: ${{ steps.formula.outputs.present }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Detect the formula
-        id: formula
-        run: echo "present=$([ -f Formula/offsider.rb ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          fetch-depth: 2 # the pull request merge commit and its base parent
+      - name: Formula is the one the release renders
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        # Inline, not a script in the tap: a pull request may not change files outside the
+        # formula, README.md, the workflows and dependabot.yml; the tap App cannot write workflow files.
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          f=Formula/offsider.rb
+          [ -f "$f" ] || fail "$f is missing"
+          parse_version() {
+            [[ "$1" =~ ^https://github\.com/michael-palmes/offsider/releases/download/v([^/]+)/ ]] && echo "${BASH_REMATCH[1]}"
+          }
+
+          if [ "$EVENT" = pull_request ]; then
+            [ "$(git rev-list --parents -n1 HEAD | wc -w)" -eq 3 ] || fail "Expected the pull request merge commit at HEAD"
+            outside="$(git diff --name-only --no-renames HEAD^1 HEAD | grep -Ev '^(Formula/offsider\.rb|README\.md|\.github/(workflows/.+|dependabot\.yml))$' || true)"
+            [ -z "$outside" ] || fail "Only Formula/offsider.rb, README.md, .github/workflows and .github/dependabot.yml may change, not: $(tr '\n' ' ' <<<"$outside")"
+          fi
+
+          urls="$(sed -nE 's/^  url "([^"]*)"$/\1/p' "$f")"
+          shas="$(sed -nE 's/^  sha256 "([^"]*)"$/\1/p' "$f")"
+          [ "$(grep -c . <<<"$urls" || true)" -eq 1 ] || fail "Expected one url line in $f"
+          [ "$(grep -c . <<<"$shas" || true)" -eq 1 ] || fail "Expected one sha256 line in $f"
+          url="$urls"; sha="$shas"
+          [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || fail "sha256 is not 64 lowercase hex characters"
+          version="$(parse_version "$url")" || fail "url is not an Offsider release download: $url"
+          [[ "$version" != *-* ]] || fail "$version is a prerelease; main takes stable releases only"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "$version is not MAJOR.MINOR.PATCH"
+          [ "$url" = "https://github.com/michael-palmes/offsider/releases/download/v${version}/offsider-${version}-arm64.tar.gz" ] \
+            || fail "url is not the release tarball for v$version: $url"
+
+          if [ "$EVENT" = pull_request ] && base_rb="$(git show "HEAD^1:$f" 2>/dev/null)"; then
+            base_url="$(sed -nE 's/^  url "([^"]*)"$/\1/p' <<<"$base_rb" | head -n1)"
+            if base="$(parse_version "$base_url")"; then
+              [ "$(printf '%s\n%s\n' "$base" "$version" | sort -V | head -n1)" = "$base" ] \
+                || fail "$version is lower than $base on the base branch"
+            fi
+          fi
+
+          # Only render_formula is taken from the tag's release.sh; the rest never runs.
+          work="$(mktemp -d)"
+          gh api -H "Accept: application/vnd.github.raw" \
+            "repos/michael-palmes/offsider/contents/scripts/release.sh?ref=refs/tags/v${version}" > "$work/release.sh"
+          awk '/^render_formula\(\) \{/ { on = 1 } on { print } on && /^\}$/ { exit }' "$work/release.sh" > "$work/render.sh"
+          [ "$(head -n1 "$work/render.sh")" = 'render_formula() {  # version url sha256 [explicit]' ] && [ "$(tail -n1 "$work/render.sh")" = '}' ] \
+            || fail "render_formula not found in release.sh at v$version"
+          # shellcheck disable=SC2016 # expanded by the inner shell
+          env -i PATH=/usr/bin:/bin /bin/bash --noprofile --norc -c '. "$1" && render_formula "$2" "$3" "$4"' \
+            render "$work/render.sh" "$version" "$url" "$sha" > "$work/offsider.rb"
+          if ! cmp -s "$work/offsider.rb" "$f"; then
+            diff -u "$work/offsider.rb" "$f" || true
+            fail "$f differs from the formula release.sh renders at v$version"
+          fi
+          echo "Formula matches release.sh at v$version"
       - name: Tap this checkout
         run: |
           tap_dir="$(brew --repository)/Library/Taps/michael-palmes/homebrew-tap"
@@ -50,7 +102,6 @@ jobs:
 
   install:
     needs: audit
-    if: needs.audit.outputs.has-formula == 'true'
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -59,6 +110,7 @@ jobs:
           persist-credentials: false
       - name: Tap this checkout and select Xcode
         run: |
+          [ -f Formula/offsider.rb ] || { echo "::error::Formula/offsider.rb is missing"; exit 1; }
           tap_dir="$(brew --repository)/Library/Taps/michael-palmes/homebrew-tap"
           mkdir -p "$(dirname "$tap_dir")"
           ln -sfn "$GITHUB_WORKSPACE" "$tap_dir"
@@ -71,8 +123,14 @@ jobs:
         run: |
           set -euo pipefail
           tarball="$(brew --cache michael-palmes/tap/offsider)"
+          version="$(sed -nE 's|^  url "https://github\.com/michael-palmes/offsider/releases/download/v([^/]+)/.*"$|\1|p' Formula/offsider.rb)"
+          sha="$(sed -nE 's/^  sha256 "([0-9a-f]{64})"$/\1/p' Formula/offsider.rb)"
+          [ -n "$version" ] && [ -n "$sha" ] || { echo "::error::Cannot read the version and sha256 from the formula"; exit 1; }
+          echo "$sha  $tarball" | shasum -a 256 -c
           gh attestation verify "$tarball" --repo michael-palmes/offsider \
-            --signer-workflow michael-palmes/offsider/.github/workflows/release.yml
+            --signer-workflow michael-palmes/offsider/.github/workflows/release.yml \
+            --source-ref "refs/tags/v${version}" \
+            --deny-self-hosted-runners
           x="$(mktemp -d)"; tar -xzf "$tarball" -C "$x"
           libexec="$(brew --prefix offsider)/libexec"
           manifest() { (cd "$1" && find offsider Offsider_Offsider.bundle Frameworks \( -type f -o -type l \) | LC_ALL=C sort | while IFS= read -r p; do
