@@ -1,8 +1,8 @@
 class Offsider < Formula
   desc "Inspect and drive iOS and Android simulators, emulators and USB devices"
   homepage "https://offsidercli.com/"
-  url "https://github.com/michael-palmes/offsider/releases/download/v0.16.0/offsider-0.16.0-arm64.tar.gz"
-  sha256 "bf1ba74a71165816e8db9b333f275f3e8107f8b080f48468869ccaad29526f96"
+  url "https://github.com/michael-palmes/offsider/releases/download/v0.17.0/offsider-0.17.0-arm64.tar.gz"
+  sha256 "9c48ec6adf96a46739553ac057bf9b96fd6bbecb49392e99e955bd3ca88847a6"
   license "MIT"
 
   livecheck do
